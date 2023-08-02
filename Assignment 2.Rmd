@@ -1,0 +1,402 @@
+---
+title: "Assignment 2"
+author: "Kimothy wong A16578312"
+date: "2023-05-02"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup,message=FALSE}
+# setwd("/Users/kimothywong/Desktop/2023 Spring/GPEC 446")
+library(tidyverse)
+library(ggplot2)
+library(fixest)
+library(tidyverse)
+library(stargazer)
+library(wooldridge)
+library(fixest)
+library(tseries)
+library(forecast)
+library(zoo)
+```
+
+# 1
+```{r}
+load("ezanders.Rda")
+data1<-ezanders
+```
+
+## 1a
+
+```{r}
+data1_ts <- data1|>
+  mutate(time = row_number())
+data1_ts<-data1_ts|>
+  mutate("date" = seq(as.Date("1980-01-01"), as.Date("1988-11-01"), by = "1 months"))
+
+selected_dates <- as.Date(c("1980-01-01","1982-01-01","1984-01-01","1986-01-01","1988-01-01"))
+
+ggplot(data1_ts, aes(x = date, y = uclms)) +
+  geom_line() +
+  geom_vline(xintercept = as.Date("1984-01-01")) +
+  scale_x_date(breaks = selected_dates, date_labels = "%m/%Y") +
+  ylab("Unemployment Claims") +
+  xlab("Year") +
+  labs(x = "Date", y = "Monthly Unemployment Claims", title = "TIMEPLOT OF MONTHLY UNEMPLOYMENT CLAIMS") +
+  theme_classic() +
+  theme(plot.title = element_text(face = "bold", size = 10, hjust = 0, margin = margin(t = 10, r = 0, b = 10, l = 0))) +
+  annotate("text", x = as.Date("1986-01-01"), y = 200, label = "Enterprise Development Zone Was Formed", vjust = -17, hjust = 0.38)
+  
+```
+There exits a discontinuous impact. After introducing the enterprise zone, the unemployment claims experience a sudden downward, but due to the different employment environment in each month, the effect is unevenly distributed which means it has seasonality. I think when we evaluate the longer-term impact of the zone, we could be bothered by the different time trend in each month.
+
+## 1b
+
+```{r}
+m1 <- lm(uclms ~ ez, data1_ts)
+m2 <- lm(uclms ~ ez+year, data1_ts)
+m3 <- lm(uclms ~ ez + year+I(year^2), data1_ts)
+m4 <- lm(uclms ~ ez + time, data1_ts)
+m5 <- lm(uclms ~ ez + as.factor(month), data1_ts)
+m6<- lm(uclms ~ ez + as.factor(month) + year, data1_ts)
+m7<- lm(uclms ~ ez + as.factor(month) + factor(year), data1_ts)
+```
+
+```{r, results='asis',echo = FALSE}
+stargazer(m1, m2, m3,m4, m5, m6,m7,
+          type="latex",
+          keep = "ez",
+          covariate.labels = c("enterprise zone"),
+          dep.var.labels = c("Unemployment Claims"),
+          font.size = "small",
+          digits = 2,
+         column.sep.width = "1pt",
+         omit.stat = c("f","ser"),
+        add.lines = list(c("Linear Year", "No","Yes","Yes","No","No","Yes","No"), c("Quadratic Year","No" ,"No","Yes","No","No","No","No"),c("Linear Month","No","No","No","Yes","No","No","No"),c("Month Dummy","No","No","No","No","Yes","Yes","Yes"),c("Year Dummy","No","No","No","No","Yes","No","Yes")),
+          header=FALSE)
+
+
+```
+\newpage
+My results are sensitive to different time variables which I controlled. When I take different bundles of month trend, year trend, month dummies, year dummies, and year quadratic, I get different coefficient for the marginal effect of enterprise zone on unemployment claims. It seems that adopting model (7) is the most reasonable because it has highest R square, indicating it explains that the model controlling year and month dummies fits the data the best.
+
+## 1c
+```{r}
+m1 <- lm(uclms ~ ez+lag(uclms, 1), data1_ts)
+m2 <- lm(uclms ~ ez+year+lag(uclms, 1), data1_ts)
+m3 <- lm(uclms ~ ez + year + I(year^2)+lag(uclms, 1), data1_ts)
+m4 <- lm(uclms ~ ez + time+lag(uclms, 1), data1_ts)
+m5 <- lm(uclms ~ ez + as.factor(month)+lag(uclms, 1), data1_ts)
+m6<- lm(uclms ~ ez + as.factor(month) + year+lag(uclms, 1), data1_ts)
+m7<- lm(uclms ~ ez + as.factor(month) + factor(year)+lag(uclms, 1), data1_ts)
+
+```
+
+```{r,results='asis',echo = FALSE}
+stargazer(m1, m2, m3, m4,m5,m6,m7,
+          type="latex",
+         keep=c("ez","uclms"),
+          covariate.labels = c("enterprise zone","lag(unemployment)"),
+          dep.var.labels = c("Unemployment Claims"),
+          font.size = "small",
+         column.sep.width = "1pt",
+         omit.stat = c("f","ser"),
+         add.lines = list(c("Linear Year", "No","Yes","Yes","No","No","Yes","No"), c("Quadratic Year","No" ,"No","Yes","No","No","No","No"),c("Linear Month","No","No","No","Yes","No","No","No"),c("Month Dummy","No","No","No","No","Yes","Yes","Yes"),c("Year Dummy","No","No","No","No","Yes","No","Yes")),
+          header=FALSE)
+
+```
+\newpage
+
+According to the regression table, the coefficient of enterprise zone is not significant but coefficient of the first lag of dependent variable is significant. We can conclude that it is first lag monthly trend effect rather than enterprise zone that cause the change in unemployment claims, indicating that unemployment claims is a autocorrelation variable.
+
+
+## 1d
+```{r}
+data1_ts <- 
+  data1 |>
+  rownames_to_column( 
+    var = "trend"  
+  ) |> 
+  mutate(
+   
+    trend = as.numeric(trend),
+    trendsq = trend^2,
+        month = trend %% 12,
+ 
+    month = if_else(month == 0, 12, month),
+    m1 = (month == 1),
+    m2 = (month == 2),
+    m3 = (month == 3),
+    m4 = (month == 4),
+    m5 = (month == 5),
+    m6 = (month == 6),
+    m7 = (month == 7),
+    m8 = (month == 8),
+    m9 = (month == 9),
+    m10 = (month == 10),
+    m11 = (month == 11),
+    m12 = (month == 12),
+    const = 1 
+  )
+
+ts1_object <- 
+  ts(
+    data = data1_ts,
+    start = c(1980,1), 
+    frequency = 12 
+  )
+
+adf.test( 
+  ts1_object[,"uclms"]
+) 
+
+```
+Because p-value of Dickey-Fuller Test less than 0.05, we can reject the null hypothesis that there exits a unit root. It means unemployment claims does not has a unit root.
+
+
+# 2
+```{r}
+load("hseinv.Rda")
+data2<-hseinv
+```
+
+## 2a
+```{r}
+data2_ts <- 
+  data2 |>
+  rownames_to_column( 
+    var = "time"  
+  ) |> 
+  mutate(
+    time = as.numeric(time),
+    timesq = time^2,
+    const = 1 
+ 
+  )
+
+data2_1<-data2_ts|>filter(year<=1970)
+model <- lm(linv ~ lpop+lprice+time+I(time^2), data = data2_1)
+
+
+prediction <- data2_ts %>% filter(year > 1970) %>%
+  predict(model, newdata = .)
+mse <- mean((data2_ts$linv[data2_ts$year>1970] - prediction)^2)
+```
+
+```{r, results='asis',echo = FALSE}
+stargazer(model,
+          type = "latex",
+          covariate.labels = c("log (population)","log (housing price)","trend","trend quadratic"),
+           column.labels = c("Model"),
+          dep.var.labels = c("log (housing investment)"),
+          font.size = "small",
+          header=FALSE)
+
+```
+\newpage
+The coefficient of log price to log housing investment is 2.19 and is significant, which means after controlling linear and quadratic time trend and population level, when price increases 1%, the housing investment will increase 2.19 percentage point. We can use the model to get predict values (prediction) to calculate mean squared error (MSE). The MSE of the prediction over this interval is 0.079.
+
+# 2b
+```{r}
+ts2_object <- 
+  ts(
+    data = data2_ts,
+    start = c(1947,1),
+    frequency = 1
+  )
+
+acf1 <- lm(linv ~ lag(linv, 1), data2_ts|>filter(year<=1970))
+acf2 <- lm(linv ~ lag(linv, 2), data2_ts|>filter(year<=1970))
+acf3 <- lm(linv ~ lag(linv, 3), data2_ts|>filter(year<=1970))
+acf4 <- lm(linv ~ lag(linv, 4), data2_ts|>filter(year<=1970))
+
+pacf1 <- lm(linv ~ lag(linv, 1), data2_ts|>filter(year<=1970))
+pacf2 <- lm(linv ~ lag(linv, 1) + lag(linv, 2), data2_ts|>filter(year<=1970))
+pacf3 <- lm(linv ~ lag(linv, 1) + lag(linv, 2) + lag(linv, 3), data2_ts|>filter(year<=1970))
+pacf4 <- lm(linv ~ lag(linv, 1) + lag(linv, 2) + lag(linv, 3) + lag(linv, 4), data2_ts|>filter(year<=1970))
+```
+
+```{r, results='asis',echo = FALSE}
+stargazer(acf1, acf2, acf3, acf4,
+          type = "latex",
+          dep.var.labels = "log (investment)",
+          digits = 2,
+         column.sep.width = "1pt",
+         omit.stat = c("f","ser"),
+         title = "ACF regression",
+          header=FALSE)
+```
+
+```{r}
+acf(ts2_object[1:24,"linv"])
+```
+
+
+```{r, results='asis',echo = FALSE}
+stargazer(pacf1, pacf2, pacf3, pacf4,
+          type = "latex",
+          dep.var.labels = "log (investment)",
+          digits = 2,
+         column.sep.width = "1pt",
+         omit.stat = c("f","ser"),
+         title = "PACF regression",
+          header=FALSE)
+```
+
+```{r}
+pacf(ts2_object[1:24,"linv"])
+```
+
+According to regression table and PACF, We can see very severe autocorrelation in the first lag. Evidence that this is an AR(1) or an MA(1) process. Because ACF tails down gradually and PACF cuts off after first lag, we can decide an AR(1) model. The PACF picture and 4 lag regression shows that the first and fourth lag has significant effect on current value. 
+
+## 2c
+```{r,warning=FALSE}
+adf.test( 
+  ts2_object[1:24,"linv"]
+) 
+```
+If we fail to reject ADF test, it may because there are only 24 observations, the small sample size will lead to huge standard error, which gets high p-value and makes us difficult to reject null hypothesis.
+
+
+## 2d
+```{r}
+model_predict_linv <- 
+  arima(
+    ts2_object[1:24,"linv"],
+    xreg=ts2_object[1:24],
+    order = c(1,0,0)
+  )
+checkresiduals(model_predict_linv)
+```
+
+According to above evidence, we can know the dataset does not has unit root. Because ACF tails off and PACF cuts down after first lag, we use AR(1) model without taking difference. 
+\
+We can test that after using ARIMA (1,0,0), we now have white noise residuals. The ACF picture for residuals and failure to reject (p-value>0.05) Ljung-Box test null hypothesis prove that there is no autocorrelation in residuals.It means we successfully control the time trends, making the residuals distributed randomly.
+
+
+## 2e
+```{r}
+m8 <- arima(data2_ts$linv[data2_ts$year < 1971], order = c(1, 0, 0))
+m9 <- arima(data2_ts$linv, order = c(1, 0, 0)) 
+
+# Step-ahead forecasting
+arima_sa <- as_tibble(fitted(m9))
+colnames(arima_sa) <- c("step_ahead")
+arima_sa <- arima_sa %>%
+  mutate(time = row_number())
+data2_ts1 <- left_join(data2_ts, arima_sa, by = c("time" = "time"))
+
+
+# Dynamic forecasting
+arima_dyn <- as_tibble(predict(m8, n.ahead = 18)$pred)
+colnames(arima_dyn) <- c("dynamic") 
+arima_dyn <- arima_dyn %>%
+  mutate(time = 24 + row_number())
+
+data2_ts1 <- left_join(data2_ts1, arima_dyn, by = c("time" = "time"))
+
+```
+
+The step-ahead forecast uses contemporaneous data to predict the next period, then when predicting in the next period we use the actual values from the next period, not the predicted ones. It assumes that the future value is solely dependent on the current information and does not consider feedback or dependence on future observations.
+\
+The dynamic forecasting into the future uses only data available at the time we begin forecasting, and in each future period uses the future forecasts (the predicted value) to predict the next period. This type of forecast assumes that the future values of the series depend not only on the current value of the series, but also on the historical values of the series and other relevant predictors.
+\
+In terms of realism, a dynamic forecast is generally considered more realistic in an actual forecasting scenario. It captures the potential changes in the relationship between past and future observations as new data is observed. But it depends the nature of the time series data.
+
+## 2f
+```{r,warning=FALSE}
+# 2a prediction
+linear<-as_tibble(data2_ts %>% filter(year > 1970) %>%
+  predict(model, newdata = .))
+colnames(linear) <- c("linear")
+
+linear<-linear %>%
+  mutate(time=24 + row_number())
+data2_ts2 <- left_join(data2_ts1, linear, by = c("time" = "time"))
+
+# Draw the plot
+data2_ts2<-data2_ts2|>
+  mutate("date" = seq(as.Date("1947-01-01"), as.Date("1988-01-01"), by = "12 months"))
+
+
+ggplot(data2_ts2, aes(x = date)) +
+  geom_line(aes(y = linv, color = "Actual Values")) +
+  geom_line(aes(y = step_ahead, color = "Step-Ahead")) +
+  geom_line(aes(y = dynamic, color = "Dynamic")) + 
+  geom_line(aes(y = linear, color = "OLS")) +
+  geom_vline(xintercept = 24) +
+  xlab("Year") + ylab("log (investment)") +
+  ggtitle("OLS vs Dynamic vs Step-Ahead Forecasts")+
+  theme_classic()
+
+
+
+```
+
+The model in 2a controls linear and quadratic time trend from 1947-1988, but cannot identify the effect of serial correlated time trend and future shocks. Its shape can fit value from 1971-1988 at first, but when there are more shocks and variation appear, this model cannot predict correctly anymore and get more deviated from actual values.
+\
+The dynamic model tries to forecast values from 1971-1988 using values from 1947-1970. Considering we do not have a unit root in this data, our dynamic forecasting will presents a curve rather than a horizontal line.
+\
+The step-ahead model uses contemporaneous data to predict the next period, and uses actual next period values to predict the current period, so this model could forecast slightly ahead its time. By doing step-ahead forecasting, this shows us our ARIMA(1,0,0) model is better at step-ahead forecasting than dynamic forecasting by comparing many periods.
+
+
+## 2g
+```{r}
+# dynamic MSE
+mse3 <- mean((data2_ts2$linv[data2_ts2$year>1970] - data2_ts2$dynamic[data2_ts2$year>1970])^2)
+print(paste("dynamic MSE = ",mse3))
+# step-ahead MSE
+mse2 <- mean((data2_ts2$linv[data2_ts2$year>1970] - data2_ts2$step_ahead[data2_ts2$year>1970])^2)
+print(paste("step-ahead MSE = ",mse2))
+# 2a model MSE
+mse <- mean((data2_ts2$linv[data2_ts2$year>1970] - data2_ts2$linear[data2_ts2$year>1970])^2)
+print(paste("linear MSE = ",mse))
+```
+
+MSE is used to check how close estimates or forecasts are to actual values. Calculating the MSE of different forecast methods can help us assess their accuracy and identify the best performing approach for a given time series. Theses standard are different because their different forecast pattern and assumption.
+\
+The dynamic model only uses predicted values of past periods to forecast future, it could not correctly predict the values in 1971-1988. Especially this series data has more shocks after 1971, making predictions before 1970 have less degree of learnability. It has less accuracy and larger standard error (MSE=0.24). 
+\
+The step-ahead forecast has the lowest standard error because it uses all values to build a model to forecast and does detrending to the whole time series data, and it fits the best in 1971-1988 (MSE=0.03). 
+\
+The 2a linear model uses partial data and cannot get rid of time trend variation, but it uses actual values from past to predict future. So it has some predict ability for 1971-1988, its standard error is in the median level (MSE=0.08).
+\
+I think these MSE are generally a correct forecast errors about predicting the series farther off into the future.  However, it is important to consider the assumptions and limitations of each method and to recognize that forecast errors are likely to increase as we predict farther into the future.
+
+## 3
+```{r}
+load("nyse.Rda")
+data3<-nyse
+```
+
+```{r}
+data3_ts<-ts(data3$price)
+acf(data3_ts)
+adf.test(data3_ts)
+
+acf31<-lm(price~lag(price,1), data=data3)
+acf32<-lm(price~lag(price,2), data=data3)
+acf33<-lm(price~lag(price,3), data=data3)
+acf34<-lm(price~lag(price,4), data=data3)
+
+
+pacf31<-lm(price~lag(price,1), data=data3)
+pacf32<-lm(price~lag(price,1)+lag(price,2), data=data3)
+pacf33<-lm(price~lag(price,1)+lag(price,2)+lag(price, 3), data=data3)
+pacf34<-lm(price~lag(price,1)+lag(price,2)+lag(price, 3)+lag(price, 4), data=data3)
+
+```
+
+```{r, results='asis',echo = FALSE}
+stargazer(acf31,acf32,acf33,acf34,pacf31,pacf32,pacf33,pacf34,
+          column.labels = c("ACF","ACF","ACF","ACF","PACF","PACF","PACF","PACF"),
+          type = "latex",
+          font.size = "small",
+         column.sep.width = "1pt",
+         omit.stat = c("f","ser"),
+          header=FALSE)
+```
+
+\newpage
+The Efficient Markets Hypothesis is hold in this series because the ACF picture shows there are severe autocorrelation between one period and its last period ($\rho$ close to 1), and p-value for ADF test shows that we fail to reject null hypothesis. So the price variable exits unit root/ follows the random walk. Today's price all comes from last time price but not from historical information. And the regression coefficient of ACF and PACF also indicates that time effect from high order lag cannot impacts current price value after controlling periods between them. It means that there is no serial correlation which means there is no predictable pattern in this series. This fits The Efficient Markets Hypothesis that any new information is rapidly incorporated into asset prices and all market participants have access to the same information.
